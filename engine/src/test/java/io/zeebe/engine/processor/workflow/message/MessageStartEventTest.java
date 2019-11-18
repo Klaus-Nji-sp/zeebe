@@ -18,6 +18,7 @@ import io.zeebe.model.bpmn.Bpmn;
 import io.zeebe.model.bpmn.BpmnModelInstance;
 import io.zeebe.model.bpmn.builder.ProcessBuilder;
 import io.zeebe.protocol.record.Record;
+import io.zeebe.protocol.record.intent.JobIntent;
 import io.zeebe.protocol.record.intent.MessageStartEventSubscriptionIntent;
 import io.zeebe.protocol.record.intent.MessageSubscriptionIntent;
 import io.zeebe.protocol.record.intent.WorkflowInstanceIntent;
@@ -405,7 +406,15 @@ public class MessageStartEventTest {
   @Test
   public void shouldCreateOnlyOnceInstancePerCorrelationKey() {
     // given
-    engine.deployment().withXmlResource(createWorkflowWithOneMessageStartEvent()).deploy();
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("wf")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
 
     // when
     engine
@@ -455,7 +464,7 @@ public class MessageStartEventTest {
             Bpmn.createExecutableProcess("wf")
                 .startEvent("v1")
                 .message(MESSAGE_NAME1)
-                .endEvent()
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
                 .done())
         .deploy();
 
@@ -473,7 +482,7 @@ public class MessageStartEventTest {
             Bpmn.createExecutableProcess("wf")
                 .startEvent("v2")
                 .message(MESSAGE_NAME1)
-                .endEvent()
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
                 .done())
         .deploy();
 
@@ -506,6 +515,78 @@ public class MessageStartEventTest {
         .extracting(r -> r.getValue().getValue())
         .hasSize(2)
         .contains("1", "3");
+  }
+
+  @Test
+  public void shouldCreateAnotherInstanceForSameCorrelationKeyAfterCompletion() {
+    // given
+    engine.deployment().withXmlResource(createWorkflowWithOneMessageStartEvent()).deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    RecordingExporter.workflowInstanceRecords().limitToWorkflowInstanceCompleted().await();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+  }
+
+  @Test
+  public void shouldCreateAnotherInstanceForSameCorrelationKeyAfterTermination() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    engine.workflowInstance().withInstanceKey(job.getValue().getWorkflowInstanceKey()).cancel();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
   }
 
   private static BpmnModelInstance createWorkflowWithOneMessageStartEvent() {

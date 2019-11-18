@@ -54,6 +54,7 @@ import io.zeebe.engine.processor.workflow.handlers.seqflow.ParallelMergeSequence
 import io.zeebe.engine.processor.workflow.handlers.seqflow.SequenceFlowTakenHandler;
 import io.zeebe.engine.processor.workflow.handlers.servicetask.ServiceTaskElementActivatedHandler;
 import io.zeebe.engine.processor.workflow.handlers.servicetask.ServiceTaskElementTerminatingHandler;
+import io.zeebe.engine.processor.workflow.message.MessageStartWorkflowInstancePoller;
 import io.zeebe.engine.state.ZeebeState;
 import io.zeebe.protocol.record.intent.WorkflowInstanceIntent;
 import java.util.EnumMap;
@@ -65,6 +66,8 @@ public class BpmnStepHandlers {
   public BpmnStepHandlers(final ZeebeState state, final CatchEventBehavior catchEventBehavior) {
     final IncidentResolver incidentResolver = new IncidentResolver(state.getIncidentState());
     final CatchEventSubscriber catchEventSubscriber = new CatchEventSubscriber(catchEventBehavior);
+    final MessageStartWorkflowInstancePoller messageStartPoller =
+        new MessageStartWorkflowInstancePoller(state.getMessageState());
 
     stepHandlers.put(BpmnStep.ELEMENT_ACTIVATING, new ElementActivatingHandler<>());
     stepHandlers.put(BpmnStep.ELEMENT_ACTIVATED, new ElementActivatedHandler<>());
@@ -96,8 +99,10 @@ public class BpmnStepHandlers {
     stepHandlers.put(
         BpmnStep.CONTAINER_ELEMENT_TERMINATING,
         new ContainerElementTerminatingHandler<>(catchEventSubscriber));
-    stepHandlers.put(BpmnStep.PROCESS_COMPLETED, new ProcessCompletedHandler());
-    stepHandlers.put(BpmnStep.PROCESS_TERMINATED, new ProcessTerminatedHandler(incidentResolver));
+    stepHandlers.put(BpmnStep.PROCESS_COMPLETED, new ProcessCompletedHandler(messageStartPoller));
+    stepHandlers.put(
+        BpmnStep.PROCESS_TERMINATED,
+        new ProcessTerminatedHandler(incidentResolver, messageStartPoller));
 
     stepHandlers.put(
         BpmnStep.EVENT_BASED_GATEWAY_ELEMENT_ACTIVATING,

@@ -19,6 +19,7 @@ import io.zeebe.protocol.record.intent.WorkflowInstanceIntent;
 import io.zeebe.protocol.record.intent.WorkflowInstanceResultIntent;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 import org.agrona.DirectBuffer;
 import org.agrona.MutableDirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -26,8 +27,15 @@ import org.agrona.concurrent.UnsafeBuffer;
 public class ProcessCompletedHandler
     extends ElementCompletedHandler<ExecutableFlowElementContainer> {
 
+  private final Consumer<BpmnStepContext<ExecutableFlowElementContainer>> postProcessor;
+
+  public ProcessCompletedHandler(
+      final Consumer<BpmnStepContext<ExecutableFlowElementContainer>> postProcessor) {
+    this.postProcessor = postProcessor;
+  }
+
   @Override
-  protected boolean handleState(BpmnStepContext<ExecutableFlowElementContainer> context) {
+  protected boolean handleState(final BpmnStepContext<ExecutableFlowElementContainer> context) {
 
     final var record = context.getValue();
     final var parentWorkflowInstanceKey = record.getParentWorkflowInstanceKey();
@@ -59,10 +67,12 @@ public class ProcessCompletedHandler
       sendProcessCompletedResult(context);
     }
 
+    postProcessor.accept(context);
+
     return super.handleState(context);
   }
 
-  private void sendProcessCompletedResult(BpmnStepContext context) {
+  private void sendProcessCompletedResult(final BpmnStepContext context) {
 
     final long elementInstanceKey = context.getElementInstance().getKey();
     final AwaitWorkflowInstanceResultMetadata requestMetadata =
@@ -96,9 +106,9 @@ public class ProcessCompletedHandler
   }
 
   private DirectBuffer collectVariables(
-      VariablesState variablesState,
-      AwaitWorkflowInstanceResultMetadata requestMetadata,
-      long elementInstanceKey) {
+      final VariablesState variablesState,
+      final AwaitWorkflowInstanceResultMetadata requestMetadata,
+      final long elementInstanceKey) {
 
     final Set<DirectBuffer> variablesToCollect = new HashSet<>();
     if (requestMetadata.fetchVariables().iterator().hasNext()) {

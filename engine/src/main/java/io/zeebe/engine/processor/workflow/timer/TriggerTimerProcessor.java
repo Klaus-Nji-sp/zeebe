@@ -47,7 +47,8 @@ public class TriggerTimerProcessor implements TypedRecordProcessor<TimerRecord> 
   private final WorkflowInstanceRecord eventOccurredRecord = new WorkflowInstanceRecord();
   private final KeyGenerator keyGenerator;
 
-  public TriggerTimerProcessor(final ZeebeState zeebeState, final CatchEventBehavior catchEventBehavior) {
+  public TriggerTimerProcessor(
+      final ZeebeState zeebeState, final CatchEventBehavior catchEventBehavior) {
     workflowState = zeebeState.getWorkflowState();
     keyGenerator = zeebeState.getKeyGenerator();
     this.catchEventBehavior = catchEventBehavior;
@@ -162,7 +163,8 @@ public class TriggerTimerProcessor implements TypedRecordProcessor<TimerRecord> 
     return timer.getRepetitions() == RepeatingInterval.INFINITE || timer.getRepetitions() > 1;
   }
 
-  private ExecutableCatchEventElement getTimerEvent(final long elementInstanceKey, final TimerRecord timer) {
+  private ExecutableCatchEventElement getTimerEvent(
+      final long elementInstanceKey, final TimerRecord timer) {
     if (isTimerStartEvent(elementInstanceKey)) {
       final List<ExecutableStartEvent> startEvents =
           workflowState.getWorkflowByKey(timer.getWorkflowKey()).getWorkflow().getStartEvents();
@@ -185,7 +187,9 @@ public class TriggerTimerProcessor implements TypedRecordProcessor<TimerRecord> 
   }
 
   private void rescheduleTimer(
-      final TimerRecord record, final TypedStreamWriter writer, final ExecutableCatchEventElement event) {
+      final TimerRecord record,
+      final TypedStreamWriter writer,
+      final ExecutableCatchEventElement event) {
     if (event.getTimer() == null) {
       final String message =
           String.format(
@@ -210,7 +214,8 @@ public class TriggerTimerProcessor implements TypedRecordProcessor<TimerRecord> 
         writer);
   }
 
-  private ExecutableCatchEventElement getCatchEventById(final long workflowKey, final DirectBuffer id) {
+  private ExecutableCatchEventElement getCatchEventById(
+      final long workflowKey, final DirectBuffer id) {
     final DeployedWorkflow workflow = workflowState.getWorkflowByKey(workflowKey);
     if (workflow == null) {
       throw new IllegalStateException(
