@@ -402,6 +402,112 @@ public class MessageStartEventTest {
         .containsExactly(BpmnElementType.START_EVENT, BpmnElementType.INTERMEDIATE_CATCH_EVENT);
   }
 
+  @Test
+  public void shouldCreateOnlyOnceInstancePerCorrelationKey() {
+    // given
+    engine.deployment().withXmlResource(createWorkflowWithOneMessageStartEvent()).deploy();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    // - same correlation key
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    // - different correlation key
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-2")
+        .withVariables(Map.of("x", 3))
+        .publish();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "3");
+  }
+
+  @Test
+  public void shouldNotCreateInstanceIfSameCorrelationKeyButDifferentVersion() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            "v1.bpmn",
+            Bpmn.createExecutableProcess("wf")
+                .startEvent("v1")
+                .message(MESSAGE_NAME1)
+                .endEvent()
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    engine
+        .deployment()
+        .withXmlResource(
+            "v2.bpmn",
+            Bpmn.createExecutableProcess("wf")
+                .startEvent("v2")
+                .message(MESSAGE_NAME1)
+                .endEvent()
+                .done())
+        .deploy();
+
+    // when
+    // - same correlation key
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    // - different correlation key
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-2")
+        .withVariables(Map.of("x", 3))
+        .publish();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "3");
+  }
+
   private static BpmnModelInstance createWorkflowWithOneMessageStartEvent() {
     return Bpmn.createExecutableProcess("processId")
         .startEvent(EVENT_ID1)

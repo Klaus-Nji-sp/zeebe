@@ -155,7 +155,10 @@ public class PublishMessageProcessor implements TypedRecordProcessor<MessageReco
     startEventSubscriptionState.visitSubscriptionsByMessageName(
         messageRecord.getNameBuffer(),
         subscription -> {
-          if (!correlatingSubscriptions.contains(subscription.getBpmnProcessIdBuffer())) {
+          // create only one workflow instance per correlation key
+          if (!correlatingSubscriptions.contains(subscription.getBpmnProcessIdBuffer())
+              && !messageState.existActiveWorkflowInstance(
+                  subscription.getBpmnProcessIdBuffer(), messageRecord.getCorrelationKeyBuffer())) {
 
             final DirectBuffer startEventId = subscription.getStartEventIdBuffer();
             final long workflowKey = subscription.getWorkflowKey();
@@ -172,6 +175,9 @@ public class PublishMessageProcessor implements TypedRecordProcessor<MessageReco
                   startEventRecord.setWorkflowKey(workflowKey).setElementId(startEventId));
 
               correlatingSubscriptions.add(subscription);
+
+              messageState.putActiveWorkflowInstance(
+                  subscription.getBpmnProcessIdBuffer(), messageRecord.getCorrelationKeyBuffer());
 
             } else {
               Loggers.WORKFLOW_PROCESSOR_LOGGER.error(
