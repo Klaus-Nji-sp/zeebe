@@ -421,6 +421,31 @@ public class MessageStateTest {
         .isTrue();
   }
 
+  @Test
+  public void shouldGetWorkflowInstanceCorrelationKey() {
+    // when
+    messageState.putWorkflowInstanceCorrelationKey(1L, wrapString("key-1"));
+
+    // then
+    assertThat(messageState.getWorkflowInstanceCorrelationKey(1L)).isEqualTo(wrapString("key-1"));
+
+    assertThat(messageState.getWorkflowInstanceCorrelationKey(2L)).isNull();
+  }
+
+  @Test
+  public void shouldRemoveWorkflowInstanceCorrelationKey() {
+    // given
+    messageState.putWorkflowInstanceCorrelationKey(1L, wrapString("key-1"));
+    messageState.putWorkflowInstanceCorrelationKey(2L, wrapString("key-2"));
+
+    // when
+    messageState.removeWorkflowInstanceCorrelationKey(1L);
+
+    // then
+    assertThat(messageState.getWorkflowInstanceCorrelationKey(1L)).isNull();
+    assertThat(messageState.getWorkflowInstanceCorrelationKey(2L)).isEqualTo(wrapString("key-2"));
+  }
+
   private Message createMessage(final long key, final String name, final String correlationKey) {
     return new Message(
         key,
