@@ -732,6 +732,110 @@ public class MessageStartEventTest {
         .containsExactly("v1", "v2");
   }
 
+  @Test
+  public void shouldCreateInstanceForNextPendingMessage() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job1 = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 3))
+        .publish();
+
+    engine.job().withKey(job1.getKey()).complete();
+
+    final var job2 = RecordingExporter.jobRecords(JobIntent.CREATED).skip(1).getFirst();
+    engine.job().withKey(job2.getKey()).complete();
+
+    // then
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(3))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(3)
+        .containsExactly("1", "2", "3");
+  }
+
+  @Test
+  public void shouldCreateInstanceForPendingMessageWithMultipleStartEvents() {
+    // given
+    final var process = Bpmn.createExecutableProcess("process");
+    process.startEvent().message(MESSAGE_NAME1).serviceTask("task", t -> t.zeebeTaskType("test"));
+    process.startEvent().message(MESSAGE_NAME2).connectTo("task");
+
+    engine.deployment().withXmlResource(process.done()).deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job1 = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME2)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 3))
+        .publish();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME2)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 4))
+        .publish();
+
+    engine.job().withKey(job1.getKey()).complete();
+
+    final var job2 = RecordingExporter.jobRecords(JobIntent.CREATED).skip(1).getFirst();
+    engine.job().withKey(job2.getKey()).complete();
+
+    final var job3 = RecordingExporter.jobRecords(JobIntent.CREATED).skip(2).getFirst();
+    engine.job().withKey(job3.getKey()).complete();
+
+    // then
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(4))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(4)
+        .containsExactly("1", "2", "3", "4");
+  }
+
   private static BpmnModelInstance createWorkflowWithOneMessageStartEvent() {
     return Bpmn.createExecutableProcess("processId")
         .startEvent(EVENT_ID1)

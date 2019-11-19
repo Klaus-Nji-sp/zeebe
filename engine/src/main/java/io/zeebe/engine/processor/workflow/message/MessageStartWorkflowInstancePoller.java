@@ -28,7 +28,8 @@ public class MessageStartWorkflowInstancePoller
   private final WorkflowInstanceRecord startEventRecord =
       new WorkflowInstanceRecord().setBpmnElementType(BpmnElementType.START_EVENT);
 
-  private boolean messageCorrelated;
+  private long messageKeyToCorrelate;
+  private ExecutableStartEvent startEventToCorrelate;
 
   public MessageStartWorkflowInstancePoller(
       final KeyGenerator keyGenerator, final MessageState messageState) {
@@ -39,7 +40,8 @@ public class MessageStartWorkflowInstancePoller
   @Override
   public void accept(final BpmnStepContext<ExecutableFlowElementContainer> context) {
 
-    messageCorrelated = false;
+    messageKeyToCorrelate = Long.MAX_VALUE;
+    startEventToCorrelate = null;
 
     final var bpmnProcessId = context.getValue().getBpmnProcessIdBuffer();
     final var workflowInstanceKey = context.getValue().getWorkflowInstanceKey();
@@ -53,12 +55,9 @@ public class MessageStartWorkflowInstancePoller
           context.getStateDb().getLatestWorkflowVersionByProcessId(bpmnProcessId);
       final var workflow = deployedWorkflow.getWorkflow();
 
-      // TODO (saig0): keep order of messages - also for multiple message start events
       for (final ExecutableStartEvent startEvent : workflow.getStartEvents()) {
+        if (startEvent.isMessage()) {
 
-        if (startEvent.isMessage() && !messageCorrelated) {
-
-          // TODO (saig0): extract correlation logic from PublishMessageProcessor
           messageState.visitMessages(
               startEvent.getMessage().getMessageName(),
               correlationKey,
@@ -66,39 +65,14 @@ public class MessageStartWorkflowInstancePoller
                 // correlate first message with same correlation key that was not correlated yet
                 if (!messageState.existMessageCorrelation(message.getKey(), bpmnProcessId)) {
 
-                  final var workflowKey = deployedWorkflow.getKey();
-
-                  final boolean wasTriggered =
-                      context
-                          .getStateDb()
-                          .getEventScopeInstanceState()
-                          .triggerEvent(
-                              workflowKey,
-                              message.getKey(),
-                              startEvent.getId(),
-                              message.getVariables());
-
-                  if (wasTriggered) {
-
-                    final var newWorkflowInstanceKey = keyGenerator.nextKey();
-
-                    context
-                        .getOutput()
-                        .appendFollowUpEvent(
-                            newWorkflowInstanceKey,
-                            WorkflowInstanceIntent.EVENT_OCCURRED,
-                            startEventRecord
-                                .setWorkflowKey(workflowKey)
-                                .setWorkflowInstanceKey(newWorkflowInstanceKey)
-                                .setElementId(startEvent.getId()));
-
-                    messageState.putMessageCorrelation(message.getKey(), bpmnProcessId);
-                    messageState.putWorkflowInstanceCorrelationKey(
-                        newWorkflowInstanceKey, correlationKey);
-
-                    messageCorrelated = true;
-                    return false;
+                  // correlate to the first message across all message start events
+                  // - using the message key to decide which message was correlated before
+                  if (message.getKey() < messageKeyToCorrelate) {
+                    messageKeyToCorrelate = message.getKey();
+                    startEventToCorrelate = startEvent;
                   }
+
+                  return false;
                 }
 
                 return true;
@@ -106,8 +80,44 @@ public class MessageStartWorkflowInstancePoller
         }
       }
 
-      if (!messageCorrelated) {
+      if (startEventToCorrelate == null) {
+        // no pending message to correlate
         messageState.removeActiveWorkflowInstance(bpmnProcessId, correlationKey);
+
+      } else {
+        // correlate next pending message by creating a new workflow instance
+        final var message = messageState.getMessage(messageKeyToCorrelate);
+
+        final var workflowKey = deployedWorkflow.getKey();
+
+        // TODO (saig0): extract correlation logic from PublishMessageProcessor
+        final boolean wasTriggered =
+            context
+                .getStateDb()
+                .getEventScopeInstanceState()
+                .triggerEvent(
+                    workflowKey,
+                    message.getKey(),
+                    startEventToCorrelate.getId(),
+                    message.getVariables());
+
+        if (wasTriggered) {
+
+          final var newWorkflowInstanceKey = keyGenerator.nextKey();
+
+          context
+              .getOutput()
+              .appendFollowUpEvent(
+                  newWorkflowInstanceKey,
+                  WorkflowInstanceIntent.EVENT_OCCURRED,
+                  startEventRecord
+                      .setWorkflowKey(workflowKey)
+                      .setWorkflowInstanceKey(newWorkflowInstanceKey)
+                      .setElementId(startEventToCorrelate.getId()));
+
+          messageState.putMessageCorrelation(message.getKey(), bpmnProcessId);
+          messageState.putWorkflowInstanceCorrelationKey(newWorkflowInstanceKey, correlationKey);
+        }
       }
     }
   }
