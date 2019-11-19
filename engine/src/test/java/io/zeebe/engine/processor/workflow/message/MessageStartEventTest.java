@@ -404,6 +404,52 @@ public class MessageStartEventTest {
   }
 
   @Test
+  public void shouldCreateMultipleInstancesIfCorrelationKeyIsEmpty() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("wf")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine.job().withKey(job.getKey()).complete();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "2");
+  }
+
+  @Test
   public void shouldCreateOnlyOnceInstancePerCorrelationKey() {
     // given
     engine
