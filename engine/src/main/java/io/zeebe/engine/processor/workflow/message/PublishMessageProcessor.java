@@ -155,10 +155,13 @@ public class PublishMessageProcessor implements TypedRecordProcessor<MessageReco
     startEventSubscriptionState.visitSubscriptionsByMessageName(
         messageRecord.getNameBuffer(),
         subscription -> {
+          final var bpmnProcessIdBuffer = subscription.getBpmnProcessIdBuffer();
+          final var correlationKeyBuffer = messageRecord.getCorrelationKeyBuffer();
+
           // create only one workflow instance per correlation key
-          if (!correlatingSubscriptions.contains(subscription.getBpmnProcessIdBuffer())
+          if (!correlatingSubscriptions.contains(bpmnProcessIdBuffer)
               && !messageState.existActiveWorkflowInstance(
-                  subscription.getBpmnProcessIdBuffer(), messageRecord.getCorrelationKeyBuffer())) {
+                  bpmnProcessIdBuffer, correlationKeyBuffer)) {
 
             final DirectBuffer startEventId = subscription.getStartEventIdBuffer();
             final long workflowKey = subscription.getWorkflowKey();
@@ -168,16 +171,22 @@ public class PublishMessageProcessor implements TypedRecordProcessor<MessageReco
                     workflowKey, messageKey, startEventId, messageRecord.getVariablesBuffer());
 
             if (wasTriggered) {
+              final var workflowInstanceKey = keyGenerator.nextKey();
+
               // create the workflow instance directly on the same partition
               streamWriter.appendNewEvent(
-                  messageKey,
+                  keyGenerator.nextKey(),
                   WorkflowInstanceIntent.EVENT_OCCURRED,
-                  startEventRecord.setWorkflowKey(workflowKey).setElementId(startEventId));
+                  startEventRecord
+                      .setWorkflowKey(workflowKey)
+                      .setWorkflowInstanceKey(workflowInstanceKey)
+                      .setElementId(startEventId));
 
               correlatingSubscriptions.add(subscription);
 
-              messageState.putActiveWorkflowInstance(
-                  subscription.getBpmnProcessIdBuffer(), messageRecord.getCorrelationKeyBuffer());
+              messageState.putActiveWorkflowInstance(bpmnProcessIdBuffer, correlationKeyBuffer);
+              messageState.putWorkflowInstanceCorrelationKey(
+                  workflowInstanceKey, correlationKeyBuffer);
 
             } else {
               Loggers.WORKFLOW_PROCESSOR_LOGGER.error(
