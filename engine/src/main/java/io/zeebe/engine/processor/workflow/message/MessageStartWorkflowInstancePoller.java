@@ -15,6 +15,7 @@ import io.zeebe.engine.state.message.MessageState;
 import io.zeebe.protocol.impl.record.value.workflowinstance.WorkflowInstanceRecord;
 import io.zeebe.protocol.record.intent.WorkflowInstanceIntent;
 import io.zeebe.protocol.record.value.BpmnElementType;
+import io.zeebe.util.sched.clock.ActorClock;
 import java.util.function.Consumer;
 
 public class MessageStartWorkflowInstancePoller
@@ -63,7 +64,8 @@ public class MessageStartWorkflowInstancePoller
               correlationKey,
               message -> {
                 // correlate first message with same correlation key that was not correlated yet
-                if (!messageState.existMessageCorrelation(message.getKey(), bpmnProcessId)) {
+                if (message.getDeadline() > ActorClock.currentTimeMillis()
+                    && !messageState.existMessageCorrelation(message.getKey(), bpmnProcessId)) {
 
                   // correlate to the first message across all message start events
                   // - using the message key to decide which message was correlated before

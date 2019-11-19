@@ -27,6 +27,7 @@ import io.zeebe.protocol.record.value.BpmnElementType;
 import io.zeebe.protocol.record.value.DeploymentRecordValue;
 import io.zeebe.protocol.record.value.WorkflowInstanceRecordValue;
 import io.zeebe.test.util.record.RecordingExporter;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.Rule;
@@ -880,6 +881,67 @@ public class MessageStartEventTest {
         .extracting(r -> r.getValue().getValue())
         .hasSize(4)
         .containsExactly("1", "2", "3", "4");
+  }
+
+  @Test
+  public void shouldNotCreateInstanceIfDeadlineOfPendingMessageIsReached() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("wf")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    // - short TTL
+    final var messageTtl = Duration.ofSeconds(1);
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .withTimeToLive(messageTtl.toMillis())
+        .publish();
+
+    // - long TTL
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 3))
+        .withTimeToLive(messageTtl.multipliedBy(2).toMillis())
+        .publish();
+
+    // when
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    engine.getClock().addTime(messageTtl);
+
+    engine.job().withKey(job.getKey()).complete();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "3");
   }
 
   private static BpmnModelInstance createWorkflowWithOneMessageStartEvent() {
