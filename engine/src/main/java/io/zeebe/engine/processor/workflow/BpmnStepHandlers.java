@@ -67,7 +67,7 @@ public class BpmnStepHandlers {
     final IncidentResolver incidentResolver = new IncidentResolver(state.getIncidentState());
     final CatchEventSubscriber catchEventSubscriber = new CatchEventSubscriber(catchEventBehavior);
     final MessageStartWorkflowInstancePoller messageStartPoller =
-        new MessageStartWorkflowInstancePoller(state.getMessageState());
+        new MessageStartWorkflowInstancePoller(state.getKeyGenerator(), state.getMessageState());
 
     stepHandlers.put(BpmnStep.ELEMENT_ACTIVATING, new ElementActivatingHandler<>());
     stepHandlers.put(BpmnStep.ELEMENT_ACTIVATED, new ElementActivatedHandler<>());

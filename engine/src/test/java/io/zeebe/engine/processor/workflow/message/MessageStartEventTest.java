@@ -589,6 +589,149 @@ public class MessageStartEventTest {
         .isEqualTo(2);
   }
 
+  @Test
+  public void shouldCreateInstanceForSameCorrelationKeyAfterCompletionForPendingMessage() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine.job().withKey(job.getKey()).complete();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "2");
+  }
+
+  @Test
+  public void shouldCreateInstanceForSameCorrelationKeyAfterTerminationForPendingMessage() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent()
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine.workflowInstance().withInstanceKey(job.getValue().getWorkflowInstanceKey()).cancel();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATING)
+                .filterRootScope()
+                .limit(2)
+                .count())
+        .isEqualTo(2);
+
+    assertThat(RecordingExporter.variableRecords().withName("x").limit(2))
+        .extracting(r -> r.getValue().getValue())
+        .hasSize(2)
+        .contains("1", "2");
+  }
+
+  @Test
+  public void shouldCreateInstanceOfLatestVersionAfterCompletionForPendingMessage() {
+    // given
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent("v1")
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 1))
+        .publish();
+
+    final var job = RecordingExporter.jobRecords(JobIntent.CREATED).getFirst();
+
+    engine
+        .deployment()
+        .withXmlResource(
+            Bpmn.createExecutableProcess("process")
+                .startEvent("v2")
+                .message(MESSAGE_NAME1)
+                .serviceTask("task", t -> t.zeebeTaskType("test"))
+                .done())
+        .deploy();
+
+    // when
+    engine
+        .message()
+        .withName(MESSAGE_NAME1)
+        .withCorrelationKey("key-1")
+        .withVariables(Map.of("x", 2))
+        .publish();
+
+    engine.job().withKey(job.getKey()).complete();
+
+    // then
+    assertThat(
+            RecordingExporter.workflowInstanceRecords(WorkflowInstanceIntent.ELEMENT_ACTIVATED)
+                .withElementType(BpmnElementType.START_EVENT)
+                .limit(2))
+        .extracting(r -> r.getValue().getElementId())
+        .containsExactly("v1", "v2");
+  }
+
   private static BpmnModelInstance createWorkflowWithOneMessageStartEvent() {
     return Bpmn.createExecutableProcess("processId")
         .startEvent(EVENT_ID1)
