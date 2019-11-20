@@ -121,7 +121,6 @@ public class BufferedMessageToStartEventCorrelator
       final BpmnStepContext<ExecutableFlowElementContainer> context) {
 
     createEventTrigger(workflow, elementId, message, context);
-
     final long workflowInstanceKey = createNewWorkflowInstance(workflow, elementId, context);
 
     // mark the message as correlated
@@ -156,11 +155,12 @@ public class BufferedMessageToStartEventCorrelator
       final BpmnStepContext<ExecutableFlowElementContainer> context) {
 
     final var workflowInstanceKey = keyGenerator.nextKey();
+    final var eventKey = keyGenerator.nextKey();
 
     context
         .getOutput()
         .appendFollowUpEvent(
-            workflowInstanceKey,
+            eventKey,
             WorkflowInstanceIntent.EVENT_OCCURRED,
             startEventRecord
                 .setWorkflowKey(workflow.getKey())
