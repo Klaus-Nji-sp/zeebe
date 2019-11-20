@@ -21,7 +21,7 @@ import io.zeebe.util.sched.clock.ActorClock;
 import java.util.function.Consumer;
 import org.agrona.DirectBuffer;
 
-public class MessageStartWorkflowInstancePoller
+public class BufferedMessageToStartEventCorrelator
     implements Consumer<BpmnStepContext<ExecutableFlowElementContainer>> {
 
   private final MessageState messageState;
@@ -32,7 +32,7 @@ public class MessageStartWorkflowInstancePoller
 
   private final Correlation messageCorrelation = new Correlation();
 
-  public MessageStartWorkflowInstancePoller(
+  public BufferedMessageToStartEventCorrelator(
       final KeyGenerator keyGenerator, final MessageState messageState) {
     this.keyGenerator = keyGenerator;
     this.messageState = messageState;
