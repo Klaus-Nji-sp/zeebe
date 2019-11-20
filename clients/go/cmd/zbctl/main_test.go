@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/suite"
+	"github.com/zeebe-io/zeebe/clients/go/internal/containerSuite"
 	"io/ioutil"
 	"os/exec"
 	"runtime"
@@ -14,12 +16,26 @@ import (
 
 var zbctl string
 
+type integrationTestSuite struct {
+	*containerSuite.ContainerSuite
+}
+
 func TestZbctl(t *testing.T) {
 	err := buildZbctl()
 	if err != nil {
 		t.Fatal(errors.Wrap(err, "couldn't build zbctl"))
 	}
 
+	suite.Run(t,
+		&integrationTestSuite{
+			ContainerSuite: &containerSuite.ContainerSuite{
+				Timeout:        time.Second,
+				ContainerImage: "camunda/zeebe:current-test",
+			},
+		})
+}
+
+func (s *integrationTestSuite) TestTable() {
 	tests := []struct {
 		name       string
 		command    string
@@ -37,7 +53,7 @@ func TestZbctl(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+		s.T().Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), test.timeout)
 			defer cancel()
 
@@ -60,7 +76,6 @@ func TestZbctl(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func buildZbctl() error {
