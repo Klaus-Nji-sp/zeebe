@@ -15,26 +15,27 @@ package test
 
 import (
 	"github.com/stretchr/testify/suite"
+	"github.com/zeebe-io/zeebe/clients/go/internal/containerSuite"
 	"testing"
 	"time"
 )
 
 type integrationTestSuite struct {
-	*containerSuite
+	*containerSuite.ContainerSuite
 }
 
 func TestIntegration(t *testing.T) {
 	suite.Run(t, &integrationTestSuite{
-		&containerSuite{
-			timeout:        time.Second,
-			containerImage: "camunda/zeebe:current-test",
+		&containerSuite.ContainerSuite{
+			Timeout:        time.Second,
+			ContainerImage: "camunda/zeebe:current-test",
 		},
 	})
 }
 
 func (s *integrationTestSuite) TestTopology() {
 	// when
-	response, err := s.client.NewTopologyCommand().Send()
+	response, err := s.Client.NewTopologyCommand().Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
@@ -47,7 +48,7 @@ func (s *integrationTestSuite) TestTopology() {
 
 func (s *integrationTestSuite) TestDeployWorkflow() {
 	// when
-	deployment, err := s.client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
+	deployment, err := s.Client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
@@ -64,14 +65,14 @@ func (s *integrationTestSuite) TestDeployWorkflow() {
 
 func (s *integrationTestSuite) TestCreateInstance() {
 	// given
-	deployment, err := s.client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
+	deployment, err := s.Client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	// when
 	workflow := deployment.GetWorkflows()[0]
-	workflowInstance, err := s.client.NewCreateInstanceCommand().BPMNProcessId("deploy_process").Version(workflow.GetVersion()).Send()
+	workflowInstance, err := s.Client.NewCreateInstanceCommand().BPMNProcessId("deploy_process").Version(workflow.GetVersion()).Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
@@ -85,19 +86,19 @@ func (s *integrationTestSuite) TestCreateInstance() {
 
 func (s *integrationTestSuite) TestActivateJobs() {
 	// given
-	deployment, err := s.client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
+	deployment, err := s.Client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	workflow := deployment.GetWorkflows()[0]
-	_, err = s.client.NewCreateInstanceCommand().WorkflowKey(workflow.GetWorkflowKey()).Send()
+	_, err = s.Client.NewCreateInstanceCommand().WorkflowKey(workflow.GetWorkflowKey()).Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	// when
-	jobs, err := s.client.NewActivateJobsCommand().JobType("task").MaxJobsToActivate(1).Timeout(time.Minute * 5).WorkerName("worker").Send()
+	jobs, err := s.Client.NewActivateJobsCommand().JobType("task").MaxJobsToActivate(1).Timeout(time.Minute * 5).WorkerName("worker").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
@@ -109,7 +110,7 @@ func (s *integrationTestSuite) TestActivateJobs() {
 		s.EqualValues("service_task", job.GetElementId())
 		s.Greater(job.GetRetries(), int32(0))
 
-		jobResponse, err := s.client.NewCompleteJobCommand().JobKey(job.Key).Send()
+		jobResponse, err := s.Client.NewCompleteJobCommand().JobKey(job.Key).Send()
 		if err != nil {
 			s.T().Fatal(err)
 		}
@@ -122,26 +123,26 @@ func (s *integrationTestSuite) TestActivateJobs() {
 
 func (s *integrationTestSuite) TestFailJob() {
 	// given
-	deployment, err := s.client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
+	deployment, err := s.Client.NewDeployWorkflowCommand().AddResourceFile("testdata/service_task.bpmn").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	workflow := deployment.GetWorkflows()[0]
-	_, err = s.client.NewCreateInstanceCommand().WorkflowKey(workflow.GetWorkflowKey()).Send()
+	_, err = s.Client.NewCreateInstanceCommand().WorkflowKey(workflow.GetWorkflowKey()).Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	// when
-	jobs, err := s.client.NewActivateJobsCommand().JobType("task").MaxJobsToActivate(1).Timeout(time.Minute * 5).WorkerName("worker").Send()
+	jobs, err := s.Client.NewActivateJobsCommand().JobType("task").MaxJobsToActivate(1).Timeout(time.Minute * 5).WorkerName("worker").Send()
 	if err != nil {
 		s.T().Fatal(err)
 	}
 
 	// then
 	for _, job := range jobs {
-		failedJob, err := s.client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send()
+		failedJob, err := s.Client.NewFailJobCommand().JobKey(job.GetKey()).Retries(0).Send()
 		if err != nil {
 			s.T().Fatal(err)
 		}
